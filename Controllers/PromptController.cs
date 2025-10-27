@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
 using PromptTrackerAPI.Data;
 using PromptTrackerv1.Models;
+using Microsoft.AspNetCore.Authorization;
 
 namespace PromptTrackerv1.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class PromptController : ControllerBase

@@ -28,7 +28,7 @@ namespace PromptTrackerv1.Controllers
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(user.PasswordHash);
             _context.Users.Add(user);
             _context.SaveChanges();
-            return Ok(new { message = "User created" });
+            return Ok(new { message = "User created successfully" });
         }
 
         [HttpPost("login")]
@@ -36,17 +36,24 @@ namespace PromptTrackerv1.Controllers
         {
             var user = _context.Users.SingleOrDefault(u => u.Username == login.Username);
             if (user == null || !BCrypt.Net.BCrypt.Verify(login.PasswordHash, user.PasswordHash))
-                return Unauthorized();
+                return Unauthorized(new { message = "Invalid username or password" });
 
+            var jwtSettings = _config.GetSection("Jwt");
+            var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]);
+            var issuer = jwtSettings["Issuer"];
+            var audience = jwtSettings["Audience"];
             var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.ASCII.GetBytes("YourSuperSecretKey123!"); // Same key
+
             var tokenDescriptor = new SecurityTokenDescriptor
             {
-                Subject = new ClaimsIdentity(new[] {
+                Subject = new ClaimsIdentity(new[]
+                {
                     new Claim(ClaimTypes.Name, user.Username),
                     new Claim(ClaimTypes.Role, user.Role)
                 }),
                 Expires = DateTime.UtcNow.AddHours(2),
+                Issuer = issuer,
+                Audience = audience,
                 SigningCredentials = new SigningCredentials(
                     new SymmetricSecurityKey(key),
                     SecurityAlgorithms.HmacSha256Signature
