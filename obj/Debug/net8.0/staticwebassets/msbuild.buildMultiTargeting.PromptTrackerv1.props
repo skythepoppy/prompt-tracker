@@ -1,0 +1,3 @@
+﻿<Project>
+  <Import Project="..\build\PromptTrackerv1.props" />
+</Project>
