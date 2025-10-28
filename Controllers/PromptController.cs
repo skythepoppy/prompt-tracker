@@ -23,7 +23,7 @@ namespace PromptTrackerv1.Controllers
             _enrichmentService = enrichmentService;
         }
 
-        // GET user prompts
+        // GET: api/prompt
         [HttpGet]
         public IActionResult GetUserPrompts()
         {
@@ -31,21 +31,25 @@ namespace PromptTrackerv1.Controllers
             {
                 var username = User.Identity?.Name;
                 if (string.IsNullOrEmpty(username))
-                    return Unauthorized(new { message = "Invalid or missing user identity." });
+                    return Unauthorized(new ApiResponse<string>(false, "Invalid or missing user identity."));
 
                 var prompts = _context.Prompts
                     .Where(p => p.UserId == username)
                     .OrderByDescending(p => p.CreatedAt)
                     .ToList();
 
-                return Ok(prompts);
+                if (prompts == null || !prompts.Any())
+                    return Ok(new ApiResponse<List<Prompt>>(true, "No prompts found for this user.", new List<Prompt>()));
+
+                return Ok(new ApiResponse<List<Prompt>>(true, "Prompts retrieved successfully.", prompts));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching prompts.");
-                return StatusCode(500, new { message = "An error occurred while retrieving prompts." });
+                _logger.LogError(ex, "Error fetching prompts for user.");
+                return StatusCode(500, new ApiResponse<string>(false, "An error occurred while retrieving prompts."));
             }
         }
+
 
         // Helper to validate & enrich a prompt from a DTO
         private (bool IsValid, string? ErrorMessage, Prompt? ProcessedPrompt) ValidateAndEnrichPrompt(PromptCreateDto dto, string username)
@@ -72,63 +76,90 @@ namespace PromptTrackerv1.Controllers
         [HttpPost]
         public IActionResult CreatePrompt([FromBody] PromptCreateDto dto)
         {
+            if (dto == null || string.IsNullOrWhiteSpace(dto.InputText))
+                return BadRequest(ApiResponse<object>.Fail("InputText is required."));
+
+            if (dto.InputText.Length < 3 || dto.InputText.Length > 1000)
+                return BadRequest(ApiResponse<object>.Fail("InputText must be between 3 and 1000 characters."));
+
             var username = User.Identity?.Name;
             if (string.IsNullOrEmpty(username))
-                return Unauthorized();
+                return Unauthorized(ApiResponse<object>.Fail("Unauthorized user."));
 
-            var result = ValidateAndEnrichPrompt(dto, username);
-            if (!result.IsValid)
-                return BadRequest(new { message = result.ErrorMessage });
+            var prompt = new Prompt
+            {
+                InputText = dto.InputText,
+                UserId = username,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _enrichmentService.EnrichPrompt(prompt);
 
             try
             {
-                _context.Prompts.Add(result.ProcessedPrompt!);
+                _context.Prompts.Add(prompt);
                 _context.SaveChanges();
 
-                _logger.LogInformation("Prompt successfully created by {User}.", username);
-                return CreatedAtAction(nameof(GetUserPrompts), new { id = result.ProcessedPrompt!.Id }, result.ProcessedPrompt);
+                return Ok(ApiResponse<Prompt>.Ok("Prompt successfully created.", prompt));
+
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating prompt.");
-                return StatusCode(500, new { message = "An error occurred while saving the prompt." });
+                return StatusCode(500, ApiResponse<object>.Fail($"An error occurred while saving the prompt: {ex.Message}"));
+
             }
         }
+
 
         // POST batch of prompts
         [HttpPost("batch")]
         public IActionResult CreateBatchPrompts([FromBody] List<PromptCreateDto> promptDtos)
         {
+            if (promptDtos == null || !promptDtos.Any())
+                return BadRequest(ApiResponse<object>.Fail("No prompts provided."));
+
             var username = User.Identity?.Name;
             if (string.IsNullOrEmpty(username))
-                return Unauthorized();
-
-            if (promptDtos == null || !promptDtos.Any())
-                return BadRequest(new { message = "No prompts provided." });
+                return Unauthorized(ApiResponse<object>.Fail("Unauthorized user."));
 
             var results = new List<object>();
 
             foreach (var dto in promptDtos)
             {
-                var result = ValidateAndEnrichPrompt(dto, username);
+                var errors = new List<string>();
 
-                if (!result.IsValid)
+                if (string.IsNullOrWhiteSpace(dto.InputText))
+                    errors.Add("InputText is required.");
+                else if (dto.InputText.Length < 3 || dto.InputText.Length > 1000)
+                    errors.Add("InputText must be between 3 and 1000 characters.");
+
+                if (errors.Any())
                 {
-                    results.Add(new { InputText = dto.InputText, Success = false, Errors = new[] { result.ErrorMessage } });
+                    results.Add(new { InputText = dto.InputText, Success = false, Errors = errors });
                     continue;
                 }
 
+                var prompt = new Prompt
+                {
+                    InputText = dto.InputText,
+                    UserId = username,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _enrichmentService.EnrichPrompt(prompt);
+
                 try
                 {
-                    _context.Prompts.Add(result.ProcessedPrompt!);
+                    _context.Prompts.Add(prompt);
                     _context.SaveChanges();
                     results.Add(new
                     {
                         InputText = dto.InputText,
                         Success = true,
-                        Id = result.ProcessedPrompt!.Id,
-                        Category = result.ProcessedPrompt!.Category,
-                        Source = result.ProcessedPrompt!.Source
+                        Id = prompt.Id,
+                        Category = prompt.Category,
+                        Source = prompt.Source
                     });
                 }
                 catch (Exception ex)
@@ -137,8 +168,10 @@ namespace PromptTrackerv1.Controllers
                 }
             }
 
-            return Ok(results);
+            return Ok(ApiResponse<object>.Ok("Batch processed successfully.", results));
+
         }
+
 
         // DELETE -- for admins
         [Authorize(Roles = "Admin")]
