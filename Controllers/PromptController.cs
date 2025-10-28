@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PromptTrackerAPI.Data;
 using PromptTrackerv1.Models;
+using PromptTrackerv1.Services;
 using System.Security.Claims;
 
 namespace PromptTrackerv1.Controllers
@@ -13,11 +14,13 @@ namespace PromptTrackerv1.Controllers
     {
         private readonly AppDbContext _context;
         private readonly ILogger<PromptController> _logger;
+        private readonly PromptEnrichmentService _enrichmentService;
 
-        public PromptController(AppDbContext context, ILogger<PromptController> logger)
+        public PromptController(AppDbContext context, ILogger<PromptController> logger, PromptEnrichmentService enrichmentService)
         {
             _context = context;
             _logger = logger;
+            _enrichmentService = enrichmentService;
         }
 
         // GET
@@ -60,21 +63,11 @@ namespace PromptTrackerv1.Controllers
                 if (string.IsNullOrEmpty(username))
                     return Unauthorized();
 
-                
                 prompt.UserId = username;
                 prompt.CreatedAt = DateTime.UtcNow;
 
-                
-                if (string.IsNullOrEmpty(prompt.Source))
-                    prompt.Source = "manual";
-
-                // for phase 2
-                if (string.IsNullOrEmpty(prompt.Category))
-                {
-                    prompt.Category = prompt.InputText.Contains("?") ? "question" :
-                                      prompt.InputText.Contains("code") ? "technical" :
-                                      "general";
-                }
+                // enrich prompt
+                prompt = _enrichmentService.EnrichPrompt(prompt);
 
                 _context.Prompts.Add(prompt);
                 _context.SaveChanges();
@@ -89,6 +82,7 @@ namespace PromptTrackerv1.Controllers
                 return StatusCode(500, new { message = "An error occurred while saving the prompt." });
             }
         }
+
 
         // DELETE -- for admins
         [Authorize(Roles = "Admin")]

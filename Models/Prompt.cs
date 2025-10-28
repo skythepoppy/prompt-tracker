@@ -18,10 +18,10 @@ namespace PromptTrackerv1.Models
         public string? ResponseText { get; set; }
 
         [StringLength(50, ErrorMessage = "Source cannot exceed 50 characters.")]
-        public string Source { get; set; } = "manual"; // enrichment field
+        public string Source { get; set; } = "manual"; // enrichment 
 
         [StringLength(50, ErrorMessage = "Category cannot exceed 50 characters.")]
-        public string? Category { get; set; } // optional AI enrichment tag
+        public string? Category { get; set; } 
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using PromptTrackerAPI.Data;
+using PromptTrackerv1.Services;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -9,6 +10,9 @@ var builder = WebApplication.CreateBuilder(args);
 //db  config
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// enrichment
+builder.Services.AddScoped<PromptEnrichmentService>();
 
 // jwt config
 var jwtSettings = builder.Configuration.GetSection("Jwt");

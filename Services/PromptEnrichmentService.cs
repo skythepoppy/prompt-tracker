@@ -5,24 +5,32 @@ namespace PromptTrackerv1.Services
 {
     public class PromptEnrichmentService
     {
-        public (string Category, string Source) EnrichPrompt(string inputText, string? responseText = null)
+        public Prompt EnrichPrompt(Prompt prompt)
         {
-            if (string.IsNullOrWhiteSpace(inputText))
-                return ("General", "Unknown");
+            if (prompt == null)
+                throw new ArgumentNullException(nameof(prompt));
 
-            string lowerInput = inputText.ToLower();
+            string lowerInput = prompt.InputText.ToLower();
 
-            // rule based classification ("pythonic c#)
+            // Rule-based classification
             if (Regex.IsMatch(lowerInput, @"\b(code|program|bug|algorithm|api|c#|python|java)\b"))
-                return ("Coding", "User");
+                prompt.Category = "Coding";
             else if (Regex.IsMatch(lowerInput, @"\b(write|essay|story|paragraph|poem)\b"))
-                return ("Writing", "User");
+                prompt.Category = "Writing";
             else if (Regex.IsMatch(lowerInput, @"\b(math|equation|calculate|solve|formula)\b"))
-                return ("Math", "User");
+                prompt.Category = "Math";
             else if (Regex.IsMatch(lowerInput, @"\b(data|analyze|statistics|ai|ml|training)\b"))
-                return ("AI/Analytics", "System");
+                prompt.Category = "AI/Analytics";
             else
-                return ("General", "User");
+                prompt.Category = "General";
+
+            // Optional: Set Source if empty
+            if (string.IsNullOrEmpty(prompt.Source))
+            {
+                prompt.Source = "User";
+            }
+
+            return prompt;
         }
     }
 }
