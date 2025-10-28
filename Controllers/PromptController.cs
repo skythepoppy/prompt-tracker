@@ -47,7 +47,25 @@ namespace PromptTrackerv1.Controllers
             }
         }
 
-        // POST
+        // Helper to validate & enrich a prompt
+        private (bool IsValid, string? ErrorMessage, Prompt? ProcessedPrompt) ValidateAndEnrichPrompt(Prompt prompt, string username)
+        {
+            if (prompt == null || string.IsNullOrWhiteSpace(prompt.InputText))
+                return (false, "InputText is required.", null);
+
+            if (prompt.InputText.Length < 3 || prompt.InputText.Length > 1000)
+                return (false, "InputText must be between 3 and 1000 characters.", null);
+
+            prompt.UserId = username;
+            prompt.CreatedAt = DateTime.UtcNow;
+
+            // enrich prompt
+            prompt = _enrichmentService.EnrichPrompt(prompt);
+
+            return (true, null, prompt);
+        }
+
+        // POST single prompt
         [HttpPost]
         public IActionResult CreatePrompt([FromBody] Prompt prompt)
         {
@@ -63,18 +81,15 @@ namespace PromptTrackerv1.Controllers
                 if (string.IsNullOrEmpty(username))
                     return Unauthorized();
 
-                prompt.UserId = username;
-                prompt.CreatedAt = DateTime.UtcNow;
+                var result = ValidateAndEnrichPrompt(prompt, username);
+                if (!result.IsValid)
+                    return BadRequest(new { message = result.ErrorMessage });
 
-                // enrich prompt
-                prompt = _enrichmentService.EnrichPrompt(prompt);
-
-                _context.Prompts.Add(prompt);
+                _context.Prompts.Add(result.ProcessedPrompt!);
                 _context.SaveChanges();
 
                 _logger.LogInformation("Prompt successfully created by {User}.", username);
-
-                return CreatedAtAction(nameof(GetUserPrompts), new { id = prompt.Id }, prompt);
+                return CreatedAtAction(nameof(GetUserPrompts), new { id = result.ProcessedPrompt!.Id }, result.ProcessedPrompt);
             }
             catch (Exception ex)
             {
@@ -83,6 +98,51 @@ namespace PromptTrackerv1.Controllers
             }
         }
 
+        // POST batch of prompts
+        [HttpPost("batch")]
+        public IActionResult CreatePromptsBatch([FromBody] List<Prompt> prompts)
+        {
+            if (prompts == null || !prompts.Any())
+                return BadRequest(new { message = "No prompts provided." });
+
+            var username = User.Identity?.Name;
+            if (string.IsNullOrEmpty(username))
+                return Unauthorized();
+
+            var results = new List<object>();
+
+            foreach (var prompt in prompts)
+            {
+                try
+                {
+                    var result = ValidateAndEnrichPrompt(prompt, username);
+                    if (!result.IsValid)
+                    {
+                        results.Add(new { prompt = prompt.InputText, success = false, error = result.ErrorMessage });
+                        continue;
+                    }
+
+                    _context.Prompts.Add(result.ProcessedPrompt!);
+                    _context.SaveChanges();
+
+                    results.Add(new
+                    {
+                        prompt = prompt.InputText,
+                        success = true,
+                        id = result.ProcessedPrompt!.Id,
+                        category = result.ProcessedPrompt!.Category,
+                        source = result.ProcessedPrompt!.Source
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error creating prompt: {Prompt}", prompt.InputText);
+                    results.Add(new { prompt = prompt.InputText, success = false, error = ex.Message });
+                }
+            }
+
+            return Ok(new { results });
+        }
 
         // DELETE -- for admins
         [Authorize(Roles = "Admin")]
