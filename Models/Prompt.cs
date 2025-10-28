@@ -7,7 +7,7 @@ namespace PromptTrackerv1.Models
     {
         public int Id { get; set; }
 
-        [Required]
+        
         [StringLength(100, ErrorMessage = "UserId cannot exceed 100 characters.")]
         public string UserId { get; set; } = string.Empty;
 

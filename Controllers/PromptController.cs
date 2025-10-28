@@ -23,7 +23,7 @@ namespace PromptTrackerv1.Controllers
             _enrichmentService = enrichmentService;
         }
 
-        // GET
+        // GET user prompts
         [HttpGet]
         public IActionResult GetUserPrompts()
         {
@@ -47,44 +47,41 @@ namespace PromptTrackerv1.Controllers
             }
         }
 
-        // Helper to validate & enrich a prompt
-        private (bool IsValid, string? ErrorMessage, Prompt? ProcessedPrompt) ValidateAndEnrichPrompt(Prompt prompt, string username)
+        // Helper to validate & enrich a prompt from a DTO
+        private (bool IsValid, string? ErrorMessage, Prompt? ProcessedPrompt) ValidateAndEnrichPrompt(PromptCreateDto dto, string username)
         {
-            if (prompt == null || string.IsNullOrWhiteSpace(prompt.InputText))
+            if (dto == null || string.IsNullOrWhiteSpace(dto.InputText))
                 return (false, "InputText is required.", null);
 
-            if (prompt.InputText.Length < 3 || prompt.InputText.Length > 1000)
+            if (dto.InputText.Length < 3 || dto.InputText.Length > 1000)
                 return (false, "InputText must be between 3 and 1000 characters.", null);
 
-            prompt.UserId = username;
-            prompt.CreatedAt = DateTime.UtcNow;
+            var prompt = new Prompt
+            {
+                InputText = dto.InputText,
+                UserId = username,
+                CreatedAt = DateTime.UtcNow
+            };
 
-            // enrich prompt
-            prompt = _enrichmentService.EnrichPrompt(prompt);
+            _enrichmentService.EnrichPrompt(prompt);
 
             return (true, null, prompt);
         }
 
-        // POST single prompt
+        // POST single prompt using DTO
         [HttpPost]
-        public IActionResult CreatePrompt([FromBody] Prompt prompt)
+        public IActionResult CreatePrompt([FromBody] PromptCreateDto dto)
         {
-            if (!ModelState.IsValid)
-            {
-                _logger.LogWarning("Prompt creation failed validation: {@ModelState}", ModelState);
-                return BadRequest(ModelState);
-            }
+            var username = User.Identity?.Name;
+            if (string.IsNullOrEmpty(username))
+                return Unauthorized();
+
+            var result = ValidateAndEnrichPrompt(dto, username);
+            if (!result.IsValid)
+                return BadRequest(new { message = result.ErrorMessage });
 
             try
             {
-                var username = User.Identity?.Name;
-                if (string.IsNullOrEmpty(username))
-                    return Unauthorized();
-
-                var result = ValidateAndEnrichPrompt(prompt, username);
-                if (!result.IsValid)
-                    return BadRequest(new { message = result.ErrorMessage });
-
                 _context.Prompts.Add(result.ProcessedPrompt!);
                 _context.SaveChanges();
 
@@ -100,48 +97,47 @@ namespace PromptTrackerv1.Controllers
 
         // POST batch of prompts
         [HttpPost("batch")]
-        public IActionResult CreatePromptsBatch([FromBody] List<Prompt> prompts)
+        public IActionResult CreateBatchPrompts([FromBody] List<PromptCreateDto> promptDtos)
         {
-            if (prompts == null || !prompts.Any())
-                return BadRequest(new { message = "No prompts provided." });
-
             var username = User.Identity?.Name;
             if (string.IsNullOrEmpty(username))
                 return Unauthorized();
 
+            if (promptDtos == null || !promptDtos.Any())
+                return BadRequest(new { message = "No prompts provided." });
+
             var results = new List<object>();
 
-            foreach (var prompt in prompts)
+            foreach (var dto in promptDtos)
             {
+                var result = ValidateAndEnrichPrompt(dto, username);
+
+                if (!result.IsValid)
+                {
+                    results.Add(new { InputText = dto.InputText, Success = false, Errors = new[] { result.ErrorMessage } });
+                    continue;
+                }
+
                 try
                 {
-                    var result = ValidateAndEnrichPrompt(prompt, username);
-                    if (!result.IsValid)
-                    {
-                        results.Add(new { prompt = prompt.InputText, success = false, error = result.ErrorMessage });
-                        continue;
-                    }
-
                     _context.Prompts.Add(result.ProcessedPrompt!);
                     _context.SaveChanges();
-
                     results.Add(new
                     {
-                        prompt = prompt.InputText,
-                        success = true,
-                        id = result.ProcessedPrompt!.Id,
-                        category = result.ProcessedPrompt!.Category,
-                        source = result.ProcessedPrompt!.Source
+                        InputText = dto.InputText,
+                        Success = true,
+                        Id = result.ProcessedPrompt!.Id,
+                        Category = result.ProcessedPrompt!.Category,
+                        Source = result.ProcessedPrompt!.Source
                     });
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error creating prompt: {Prompt}", prompt.InputText);
-                    results.Add(new { prompt = prompt.InputText, success = false, error = ex.Message });
+                    results.Add(new { InputText = dto.InputText, Success = false, Errors = new[] { ex.Message } });
                 }
             }
 
-            return Ok(new { results });
+            return Ok(results);
         }
 
         // DELETE -- for admins

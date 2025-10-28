@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PromptTrackerv1")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+1170d75f038c8a2f711401fa2c74a7e7c29f61c9")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f22c7a5bba784430600ff70247612076f785ffd5")]
 [assembly: System.Reflection.AssemblyProductAttribute("PromptTrackerv1")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PromptTrackerv1")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
