@@ -174,27 +174,39 @@ namespace PromptTrackerv1.Controllers
 
 
         // DELETE -- for admins
-        [Authorize(Roles = "Admin")]
         [HttpDelete("{id}")]
         public IActionResult DeletePrompt(int id)
         {
+            var username = User.Identity?.Name;
+            if (string.IsNullOrEmpty(username))
+                return Unauthorized(new ApiResponse<string>(false, "Unauthorized user."));
+
+            // Fetch the user from the database
+            var user = _context.Users.FirstOrDefault(u => u.Username == username);
+            if (user == null)
+                return Unauthorized(new ApiResponse<string>(false, "User not found."));
+
+            if (user.Role != "Admin")
+                return StatusCode(403, new ApiResponse<string>(data: null, success: false, message: "You do not have permission to delete prompts."));
+
             try
             {
                 var prompt = _context.Prompts.Find(id);
                 if (prompt == null)
-                    return NotFound(new { message = "Prompt not found." });
+                    return NotFound(new ApiResponse<string>(false, "Prompt not found."));
 
                 _context.Prompts.Remove(prompt);
                 _context.SaveChanges();
 
-                _logger.LogInformation("Prompt with ID {Id} deleted successfully.", id);
-                return NoContent();
+                _logger.LogInformation("Prompt with ID {Id} deleted successfully by {User}.", id, username);
+                return Ok(new ApiResponse<string>(true, "Prompt deleted successfully."));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting prompt with ID {Id}", id);
-                return StatusCode(500, new { message = "An error occurred while deleting the prompt." });
+                return StatusCode(500, new ApiResponse<string>(false, "An error occurred while deleting the prompt."));
             }
         }
+
     }
 }
