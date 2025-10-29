@@ -23,7 +23,7 @@ namespace PromptTrackerv1.Controllers
             _enrichmentService = enrichmentService;
         }
 
-        // GET: api/prompt
+        // get
         [HttpGet]
         public IActionResult GetUserPrompts()
         {
@@ -50,8 +50,7 @@ namespace PromptTrackerv1.Controllers
             }
         }
 
-
-        // Helper to validate & enrich a prompt from a DTO
+        // helper for validation and enrichment (from dto )
         private (bool IsValid, string? ErrorMessage, Prompt? ProcessedPrompt) ValidateAndEnrichPrompt(PromptCreateDto dto, string username)
         {
             if (dto == null || string.IsNullOrWhiteSpace(dto.InputText))
@@ -68,11 +67,10 @@ namespace PromptTrackerv1.Controllers
             };
 
             _enrichmentService.EnrichPrompt(prompt);
-
             return (true, null, prompt);
         }
 
-        // POST single prompt using DTO
+        // post (singles)
         [HttpPost]
         public IActionResult CreatePrompt([FromBody] PromptCreateDto dto)
         {
@@ -101,18 +99,15 @@ namespace PromptTrackerv1.Controllers
                 _context.SaveChanges();
 
                 return Ok(ApiResponse<Prompt>.Ok("Prompt successfully created.", prompt));
-
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating prompt.");
                 return StatusCode(500, ApiResponse<object>.Fail($"An error occurred while saving the prompt: {ex.Message}"));
-
             }
         }
 
-
-        // POST batch of prompts
+        // post (batch)
         [HttpPost("batch")]
         public IActionResult CreateBatchPrompts([FromBody] List<PromptCreateDto> promptDtos)
         {
@@ -169,11 +164,9 @@ namespace PromptTrackerv1.Controllers
             }
 
             return Ok(ApiResponse<object>.Ok("Batch processed successfully.", results));
-
         }
 
-
-        // DELETE -- for admins
+        // delete (admins)
         [HttpDelete("{id}")]
         public IActionResult DeletePrompt(int id)
         {
@@ -181,13 +174,12 @@ namespace PromptTrackerv1.Controllers
             if (string.IsNullOrEmpty(username))
                 return Unauthorized(new ApiResponse<string>(false, "Unauthorized user."));
 
-            // Fetch the user from the database
             var user = _context.Users.FirstOrDefault(u => u.Username == username);
             if (user == null)
                 return Unauthorized(new ApiResponse<string>(false, "User not found."));
 
             if (user.Role != "Admin")
-                return StatusCode(403, new ApiResponse<string>(data: null, success: false, message: "You do not have permission to delete prompts."));
+                return StatusCode(403, new ApiResponse<string>(false, "You do not have permission to delete prompts."));
 
             try
             {
@@ -208,5 +200,57 @@ namespace PromptTrackerv1.Controllers
             }
         }
 
+        // import endpoint for data parser integration
+        [AllowAnonymous]
+        [HttpPost("import")]
+        public IActionResult ImportFromParser([FromBody] ParserImportDto dto)
+        {
+            if (dto == null || string.IsNullOrWhiteSpace(dto.Summary))
+                return BadRequest(ApiResponse<object>.Fail("Invalid parser data received."));
+
+            try
+            {
+                var systemUser = _context.Users.FirstOrDefault(u => u.Role == "Admin") 
+                                 ?? _context.Users.FirstOrDefault();
+
+                if (systemUser == null)
+                    return BadRequest(ApiResponse<object>.Fail("No valid system user found to assign imported prompt."));
+
+                var prompt = new Prompt
+                {
+                    UserId = systemUser.Username,
+                    InputText = $"{dto.Keywords}\n\nEntities: {dto.Entities}",
+                    ResponseText = dto.Summary,
+                    CreatedAt = dto.FetchedAt == default ? DateTime.UtcNow : dto.FetchedAt,
+                    Source = "Parser"
+                };
+
+                _enrichmentService.EnrichPrompt(prompt);
+
+                _context.Prompts.Add(prompt);
+                _context.SaveChanges();
+
+                return Ok(ApiResponse<object>.Ok("Prompt imported successfully from parser.", new
+                {
+                    PromptId = prompt.Id,
+                    prompt.Category,
+                    prompt.Source
+                }));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error importing prompt from parser.");
+                return StatusCode(500, ApiResponse<object>.Fail($"Error importing prompt: {ex.Message}"));
+            }
+        }
+    }
+
+    // dto for parser --> prompt tracker 
+    public class ParserImportDto
+    {
+        public string Summary { get; set; } = "";
+        public string Keywords { get; set; } = "";
+        public string Entities { get; set; } = "";
+        public DateTime FetchedAt { get; set; } = DateTime.UtcNow;
     }
 }
